@@ -1,0 +1,153 @@
+version: '3.6'
+
+networks:
+  kafka-cluster:
+    external: false
+
+volumes:
+  zookeeper-data:
+  kafka-data:
+  kafka02-data:
+  kafka03-data:
+  clickhouse-data:
+
+x-build-args: &build-args
+  GO_IMAGE: 'golang'
+  GO_IMAGE_VERSION: '1.20-alpine3.18'
+  ALPINE_IMAGE_TAG: 'alpine:3.18'
+  ALPINE_REPO: 'https://mirror.yandex.ru/mirrors/alpine/v3.18/main/'
+  GOPROXY: "${GOPROXY}"
+
+x-consumer-environment: &consumer-env
+  DEBUG: ${DEBUG}
+  INPUT_KAFKA_TOPIC: ${INPUT_KAFKA_TOPIC}
+  KAFKA_SERVERS_STR: ${KAFKA_SERVERS_STR}
+  KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID}
+  KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+  KAFKA_SASL_MECHANISM: IGNORED
+  KAFKA_USER: ${KAFKA_USER}
+  KAFKA_PASSWORD: ${KAFKA_PASSWORD}
+  CONSUME_MESSAGES_TOTAL: ${CONSUME_MESSAGES_TOTAL}
+  SHOW_EVERY_NTH_MESSAGE: ${SHOW_EVERY_NTH_MESSAGE}
+
+services:
+  confluent-consumer:
+    restart: 'no'
+    build:
+      context: .
+      args:
+        <<: *build-args
+    environment:
+      <<: *consumer-env
+      KAFKA_CONSUMER_GROUP: 'confluent-consumer'
+      BATCH_CONSUMER: 0
+    networks:
+      - kafka-cluster
+    depends_on:
+      - kafka
+
+  confluent-batch-consumer:
+    restart: 'no'
+    build:
+      context: .
+      args:
+        <<: *build-args
+    environment:
+      <<: *consumer-env
+      KAFKA_CONSUMER_GROUP: 'confluent-batch-consumer'
+      BATCH_CONSUMER: 1
+    networks:
+      - kafka-cluster
+    depends_on:
+      - kafka
+
+  zookeeper:
+    image: 'confluentinc/cp-zookeeper:7.0.0'
+    restart: unless-stopped
+    hostname: zookeeper
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=32181
+      - ZOOKEEPER_TICK_TIME=2000
+      - ZOOKEEPER_SYNC_LIMIT=2
+    networks:
+      - kafka-cluster
+
+  kafka:
+    image: 'confluentinc/cp-kafka:7.0.0'
+    restart: unless-stopped
+    hostname: kafka
+    environment:
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:32181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092
+      - KAFKA_BROKER_ID=1
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    networks:
+      - kafka-cluster
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka
+    depends_on:
+      - zookeeper
+
+  kafka02:
+    image: 'confluentinc/cp-kafka:7.0.0'
+    restart: unless-stopped
+    hostname: kafka02
+    environment:
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:32181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka02:29092
+      - KAFKA_BROKER_ID=2
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    networks:
+      - kafka-cluster
+    volumes:
+      - kafka02-data:/var/lib/kafka
+    depends_on:
+      - zookeeper
+
+  kafka03:
+    image: 'confluentinc/cp-kafka:7.0.0'
+    restart: unless-stopped
+    hostname: kafka03
+    environment:
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:32181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka03:29092
+      - KAFKA_BROKER_ID=3
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    networks:
+      - kafka-cluster
+    volumes:
+      - kafka02-data:/var/lib/kafka
+    depends_on:
+      - zookeeper
+
+  clickhouse:
+    image: 'clickhouse/clickhouse-server:latest'
+    restart: unless-stopped
+    hostname: clickhouse
+    networks:
+      - kafka-cluster
+    ports:
+      - "9123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./sql/ddl:/docker-entrypoint-initdb.d
+
+  redpanda-console:
+    image: 'docker.redpanda.com/vectorized/console:latest'
+    restart: on-failure
+    environment:
+      - KAFKA_BROKERS=kafka:29092
+      - KAFKA_TLS_ENABLED=false
+      - KAFKA_SASL_ENABLED=false
+      - KAFKA_SASL_MECHANISM=PLAIN
+    networks:
+      - kafka-cluster
+    ports:
+      - "28182:8080"
+    depends_on:
+      - kafka
