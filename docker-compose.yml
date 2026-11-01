@@ -1,5 +1,3 @@
-version: '3.6'
-
 networks:
   kafka-cluster:
     external: false
@@ -16,7 +14,6 @@ x-build-args: &build-args
   GO_IMAGE_VERSION: '1.20-alpine3.18'
   ALPINE_IMAGE_TAG: 'alpine:3.18'
   ALPINE_REPO: 'https://mirror.yandex.ru/mirrors/alpine/v3.18/main/'
-  GOPROXY: "${GOPROXY}"
 
 x-consumer-environment: &consumer-env
   DEBUG: ${DEBUG}
@@ -35,6 +32,8 @@ services:
     restart: 'no'
     build:
       context: .
+      platforms:
+        - linux/amd64
       args:
         <<: *build-args
     environment:
@@ -50,6 +49,8 @@ services:
     restart: 'no'
     build:
       context: .
+      platforms:
+        - linux/amd64
       args:
         <<: *build-args
     environment:
@@ -62,7 +63,7 @@ services:
       - kafka
 
   zookeeper:
-    image: 'confluentinc/cp-zookeeper:7.0.0'
+    image: 'confluentinc/cp-zookeeper:7.5.7'
     restart: unless-stopped
     hostname: zookeeper
     environment:
@@ -73,7 +74,7 @@ services:
       - kafka-cluster
 
   kafka:
-    image: 'confluentinc/cp-kafka:7.0.0'
+    image: 'confluentinc/cp-kafka:7.5.7'
     restart: unless-stopped
     hostname: kafka
     environment:
@@ -92,7 +93,7 @@ services:
       - zookeeper
 
   kafka02:
-    image: 'confluentinc/cp-kafka:7.0.0'
+    image: 'confluentinc/cp-kafka:7.5.7'
     restart: unless-stopped
     hostname: kafka02
     environment:
@@ -109,7 +110,7 @@ services:
       - zookeeper
 
   kafka03:
-    image: 'confluentinc/cp-kafka:7.0.0'
+    image: 'confluentinc/cp-kafka:7.5.7'
     restart: unless-stopped
     hostname: kafka03
     environment:
@@ -138,13 +139,14 @@ services:
       - ./sql/ddl:/docker-entrypoint-initdb.d
 
   redpanda-console:
-    image: 'docker.redpanda.com/vectorized/console:latest'
+    image: 'docker.redpanda.com/redpandadata/console:latest'
     restart: on-failure
     environment:
       - KAFKA_BROKERS=kafka:29092
       - KAFKA_TLS_ENABLED=false
       - KAFKA_SASL_ENABLED=false
       - KAFKA_SASL_MECHANISM=PLAIN
+      - ANALYTICS_ENABLED=false
     networks:
       - kafka-cluster
     ports:
